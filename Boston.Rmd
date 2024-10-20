@@ -1,0 +1,149 @@
+---
+title: "Boston"
+author: "Alaa Aboelkhair"
+date: "2024-10-06"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(MASS)
+library(ISLR2)
+library(dplyr)
+library(corrplot)
+library(caret)
+library(class)  
+library(e1071)  
+
+# credits: chatgpt helped me with example code to create a table results, and function to calculate the accuracy  
+
+# mutates a dummy to indicate crime level 1 if bigger than median and 0 otherwise  
+crime_med <- median(Boston$crim)
+crime_level <- ifelse(Boston$crim > crime_med, 1, 0)
+
+Boston_1 <- Boston %>% 
+  mutate(crime_level)
+
+# correlation and  scatterplot 
+cor(Boston_1)
+pairs(Boston_1)
+
+# splitting the data to training and testing 70% train and 30% test 
+set.seed(1)
+Boston_1$crime_level <- as.factor(Boston_1$crime_level)
+train_index <- createDataPartition(Boston_1$crime_level, p = 0.7, list = FALSE)
+train_data <- Boston_1[train_index, ]
+test_data <- Boston_1[-train_index, ]
+
+# training and testing subsets with different predictors(hint)
+subset_1 <- train_data[, c("lstat","age", "rm", "crime_level")]
+subset_2 <- train_data[, c("lstat","age",  "rm", "zn", "crime_level" )]
+subset_3 <- train_data[, c("lstat","age",  "rm", "zn","nox","dis", "crime_level" )]
+subset_4 <- train_data[, c("lstat","age","indus", "rm", "zn","nox","dis","rad", 
+                           "tax", "ptratio", "medv", "crime_level")]
+
+subset_1_test <- test_data[, c("lstat","age", "rm", "crime_level")]
+subset_2_test <- test_data[, c("lstat","age",  "rm", "zn", "crime_level" )]
+subset_3_test <- test_data[, c("lstat","age",  "rm", "zn","nox","dis", "crime_level" )]
+subset_4_test <- test_data[, c("lstat","age","indus", "rm", "zn","nox","dis","rad", 
+                               "tax", "ptratio", "medv", "crime_level")]
+
+# to store all the results (chatgpt helped me in this)
+results <- data.frame(Model = character(),
+                      Subset = integer(),
+                      Accuracy = numeric(),
+                      Error = numeric(),
+                      stringsAsFactors = FALSE)
+
+# function to calculate accuracy and error (chatgpt helped me in this to get a nicer version)
+calc_accuracy_error <- function(predictions, actual) {
+  cm <- confusionMatrix(predictions, actual)
+  accuracy <- cm$overall['Accuracy']
+  error <- 1 - accuracy
+  return(c(accuracy, error))
+}
+
+# logistic regression on all subsets:
+glm_models <- list(glm_1 = glm(crime_level ~ lstat + age + rm, data = subset_1, family = "binomial"),
+                   glm_2 = glm(crime_level ~ lstat + age + rm + zn, data = subset_2, family = "binomial"),
+                   glm_3 = glm(crime_level ~ lstat + age + rm + zn + nox + dis, data = subset_3, family = "binomial"),
+                   glm_4 = glm(crime_level ~ lstat + age + rm + indus + zn + nox + dis + rad + tax + ptratio + medv, 
+                               data = subset_4, family = "binomial"))
+
+test_subsets <- list(subset_1_test, subset_2_test, subset_3_test, subset_4_test)
+
+for (i in 1:4) {
+  glm_pred <- predict(glm_models[[i]], test_subsets[[i]], type = "response")
+  glm_class <- ifelse(glm_pred > 0.5, 1, 0) # probability 
+  acc_err <- calc_accuracy_error(factor(glm_class), factor(test_subsets[[i]]$crime_level)) # I used the function here to show accuracy
+  
+  # here it binds result from logistic regression to the table i created. same logic for the other models  
+  results <- rbind(results, data.frame(Model = "Logistic Regression", Subset = i, 
+                                       Accuracy = acc_err[1], Error = acc_err[2]))
+}
+
+# LDA on all subsets
+
+lda_models <- list(lda_1 = lda(crime_level ~ lstat + age + rm, data = subset_1),
+                   lda_2 = lda(crime_level ~ lstat + age + rm + zn, data = subset_2),
+                   lda_3 = lda(crime_level ~ lstat + age + rm + zn + nox + dis, data = subset_3),
+                   lda_4 = lda(crime_level ~ lstat + age + rm + indus + zn + nox + dis + rad + tax + ptratio + medv, 
+                               data = subset_4))
+
+for (i in 1:4) {
+  lda_pred <- predict(lda_models[[i]], test_subsets[[i]])$class
+  acc_err <- calc_accuracy_error(factor(lda_pred), factor(test_subsets[[i]]$crime_level))
+  
+  results <- rbind(results, data.frame(Model = "LDA", Subset = i, 
+                                       Accuracy = acc_err[1], Error = acc_err[2]))
+}
+
+# Naive Bayes on all subsets
+nb_models <- list(nb_1 = naiveBayes(crime_level ~ lstat + age + rm, data = subset_1),
+                  nb_2 = naiveBayes(crime_level ~ lstat + age + rm + zn, data = subset_2),
+                  nb_3 = naiveBayes(crime_level ~ lstat + age + rm + zn + nox + dis, data = subset_3),
+                  nb_4 = naiveBayes(crime_level ~ lstat + age + rm + indus + zn + nox + dis + rad + tax + ptratio + medv, 
+                                    data = subset_4))
+
+for (i in 1:4) {
+  nb_pred <- predict(nb_models[[i]], test_subsets[[i]])
+  acc_err <- calc_accuracy_error(factor(nb_pred), factor(test_subsets[[i]]$crime_level))
+  
+  results <- rbind(results, data.frame(Model = "Naive Bayes", Subset = i, 
+                                       Accuracy = acc_err[1], Error = acc_err[2]))
+}
+
+# KNN on all subsets using loops
+k_value <- 5  
+train_subsets <- list(subset_1, subset_2, subset_3, subset_4)
+
+for (i in 1:4) {
+  train_data <- train_subsets[[i]]
+  test_data <- test_subsets[[i]]
+  
+  train_predictors <- train_data[, -ncol(train_data)]
+  train_labels <- train_data$crime_level
+  
+  test_predictors <- test_data[, -ncol(test_data)]
+  test_labels <- test_data$crime_level
+  
+  knn_pred <- knn(train = train_predictors, test = test_predictors, cl = train_labels, k = k_value)
+  
+  acc_err <- calc_accuracy_error(factor(knn_pred), factor(test_labels))
+  
+  results <- rbind(results, data.frame(Model = "KNN", Subset = i, 
+                                       Accuracy = acc_err[1], Error = acc_err[2]))
+}
+
+# The table that have all the results 
+print(results)
+```
